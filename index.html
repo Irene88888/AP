@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>應付帳款總表 - 簡約版</title>
+<title>應付帳款總表 - 金額明細版</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&family=JetBrains+Mono:wght@600&display=swap');
@@ -16,33 +16,33 @@
 body { background: var(--bg); color: var(--txt); font-family: 'Noto Sans TC', sans-serif; margin: 0; padding: 20px; }
 
 /* 大字卡設計 */
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 40px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 40px; }
 .big-card { 
   background: var(--sur); border: 1px solid var(--bdr); border-radius: 12px; 
   padding: 25px; display: flex; flex-direction: column; justify-content: center;
 }
 .card-cur { font-size: 16px; font-weight: 700; margin-bottom: 10px; letter-spacing: 1px; }
-.card-amt { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 600; line-height: 1; }
+.card-amt { font-family: 'JetBrains Mono', monospace; font-size: 38px; font-weight: 600; line-height: 1.2; margin-bottom: 5px; }
 
-/* 部門佔比清單 */
-.dept-list { margin-top: 20px; border-top: 1px solid var(--bdr); padding-top: 15px; display: flex; flex-direction: column; gap: 10px; }
-.dept-item { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
-.dept-name { color: var(--mut); display: flex; align-items: center; gap: 8px; }
-.dept-dot { width: 6px; height: 6px; border-radius: 50%; }
-.dept-val { display: flex; gap: 12px; align-items: baseline; }
-.dept-pct { font-size: 12px; color: var(--mut); min-width: 35px; text-align: right; }
+/* 部門金額清單 */
+.dept-list { margin-top: 20px; border-top: 1px solid var(--bdr); padding-top: 15px; display: flex; flex-direction: column; gap: 12px; }
+.dept-item { display: flex; justify-content: space-between; align-items: center; font-size: 15px; }
+.dept-name { color: var(--mut); display: flex; align-items: center; gap: 10px; }
+.dept-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dept-val { font-family: 'JetBrains Mono', monospace; font-weight: 500; color: var(--txt); }
 
 /* 區塊標題 */
-h2 { font-size: 14px; color: var(--mut); text-transform: uppercase; letter-spacing: 2px; margin: 40px 0 20px; border-left: 4px solid var(--bdr); padding-left: 10px; }
+h2 { font-size: 14px; color: var(--mut); text-transform: uppercase; letter-spacing: 2px; margin: 50px 0 20px; border-left: 4px solid var(--bdr); padding-left: 12px; }
+h1 { font-size: 24px; margin-bottom: 30px; }
 
-/* 簡易篩選與表格略... */
-input[type="file"] { margin-bottom: 20px; color: var(--mut); }
+.upload-btn { background: var(--sur); border: 1px dashed var(--mut); color: var(--mut); padding: 15px; border-radius: 8px; cursor: pointer; text-align: center; }
 </style>
 </head>
 <body>
 
 <h1>應付帳款總表</h1>
-<input type="file" id="upload" multiple onchange="handleFiles(this.files)">
+<div class="upload-btn" onclick="document.getElementById('upload').click()">點擊上傳 Excel 檔案</div>
+<input type="file" id="upload" multiple onchange="handleFiles(this.files)" style="display: none;">
 
 <h2>應付總額 (各幣別)</h2>
 <div id="summaryCards" class="card-grid"></div>
@@ -52,9 +52,6 @@ input[type="file"] { margin-bottom: 20px; color: var(--mut); }
 
 <h2>當月帳款</h2>
 <div id="monthlyCards" class="card-grid"></div>
-
-<h2>篩選檢視</h2>
-<div id="filterCards" class="card-grid"></div>
 
 <script>
 let rawData = [];
@@ -66,7 +63,6 @@ const CUR_META = {
   'ZAR': { color: 'var(--c-zar)' }
 };
 
-// 解析邏輯 (延用先前的核心)
 async function handleFiles(files) {
   rawData = [];
   for (let f of files) {
@@ -79,16 +75,16 @@ async function handleFiles(files) {
 }
 
 function renderAll() {
+  const now = new Date();
   const isM = (d) => {
     if(!d) return false;
     const date = new Date(d);
-    return date.getMonth() === new Date().getMonth() && date.getFullYear() === new Date().getFullYear();
+    return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
   };
 
   renderCards('summaryCards', rawData);
   renderCards('overdueCards', rawData.filter(r => r['狀態'] === '逾期'));
   renderCards('monthlyCards', rawData.filter(r => isM(r['付款日'])));
-  renderCards('filterCards', rawData); // 此處可根據篩選器邏輯連動
 }
 
 function renderCards(containerId, data) {
@@ -98,14 +94,17 @@ function renderCards(containerId, data) {
   const currencies = ['NTD', 'USD', 'JPY', 'EUR', 'ZAR'];
   
   currencies.forEach(cur => {
+    // 篩選出該幣別有金額的資料
     const items = data.filter(r => r[cur] && r[cur] > 0);
     const total = items.reduce((sum, r) => sum + r[cur], 0);
+    
     if (total === 0) return;
 
+    // 按部門加總
     const depts = [...new Set(items.map(r => r['部門']))];
     const deptSummary = depts.map(d => {
       const amt = items.filter(r => r['部門'] === d).reduce((sum, r) => sum + r[cur], 0);
-      return { name: d, amt, pct: Math.round((amt / total) * 100) };
+      return { name: d, amt };
     }).sort((a, b) => b.amt - a.amt);
 
     const card = document.createElement('div');
@@ -123,8 +122,7 @@ function renderCards(containerId, data) {
               ${ds.name}
             </div>
             <div class="dept-val">
-              <span>${ds.amt.toLocaleString()}</span>
-              <span class="dept-pct">${ds.pct}%</span>
+              ${ds.amt.toLocaleString()}
             </div>
           </div>
         `).join('')}
