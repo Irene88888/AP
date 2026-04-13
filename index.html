@@ -3,163 +3,95 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>應付帳款管理總表</title>
+<title>應付帳款總表 - 簡約版</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@500;600&display=swap');
-:root{
-  --bg:#0f172a; --sur:#1e293b; --sur2:#334155; --bdr:#475569;
-  --acc:#38bdf8; --red:#f87171; --grn:#4ade80; --ylw:#fbbf24; --pur:#c084fc; --org:#fb923c;
-  --txt:#f1f5f9; --mut:#94a3b8;
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&family=JetBrains+Mono:wght@600&display=swap');
+
+:root {
+  --bg: #0f172a; --sur: #1e293b; --bdr: #334155; --txt: #f8fafc; --mut: #94a3b8;
+  --c-ntd: #38bdf8; --c-usd: #4ade80; --c-jpy: #fbbf24; --c-eur: #c084fc; --c-zar: #f87171;
 }
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:var(--bg);color:var(--txt);font-family:'Noto Sans TC',sans-serif;font-size:14px;line-height:1.5}
 
-/* Layout */
-header{padding:20px 30px;background:rgba(15,23,42,0.8);backdrop-filter:blur(10px);border-bottom:1px solid var(--bdr);position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center}
-main{max-width:1400px;margin:0 auto;padding:24px}
-.section-title{font-size:13px;font-weight:700;color:var(--mut);letter-spacing:2px;margin:30px 0 15px;display:flex;align-items:center;gap:10px}
-.section-title::after{content:'';flex:1;height:1px;background:var(--bdr)}
+body { background: var(--bg); color: var(--txt); font-family: 'Noto Sans TC', sans-serif; margin: 0; padding: 20px; }
 
-/* 幣別大字卡 */
-.cur-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
-.cur-card { background: var(--sur); border-radius: 16px; overflow: hidden; border: 1px solid var(--bdr); transition: transform 0.2s; }
-.cur-card:hover { transform: translateY(-4px); }
-.cur-top-bar { height: 6px; width: 100%; }
-.cur-body { padding: 20px; }
-.cur-header { margin-bottom: 15px; border-bottom: 1px solid var(--bdr); padding-bottom: 15px; }
-.cur-label { font-size: 12px; font-weight: 700; color: var(--mut); margin-bottom: 4px; }
-.cur-total { font-family: 'JetBrains Mono'; font-size: 28px; font-weight: 700; color: #fff; }
+/* 大字卡設計 */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 40px; }
+.big-card { 
+  background: var(--sur); border: 1px solid var(--bdr); border-radius: 12px; 
+  padding: 25px; display: flex; flex-direction: column; justify-content: center;
+}
+.card-cur { font-size: 16px; font-weight: 700; margin-bottom: 10px; letter-spacing: 1px; }
+.card-amt { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 600; line-height: 1; }
 
-.cur-dept-list { display: flex; flex-direction: column; gap: 8px; }
-.dept-item { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
-.dept-info { display: flex; align-items: center; gap: 8px; }
-.dept-dot { width: 8px; height: 8px; border-radius: 50%; }
-.dept-amt { font-family: 'JetBrains Mono'; color: var(--txt); }
-.dept-pct { font-size: 11px; color: var(--mut); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; min-width: 40px; text-align: center; }
+/* 部門佔比清單 */
+.dept-list { margin-top: 20px; border-top: 1px solid var(--bdr); padding-top: 15px; display: flex; flex-direction: column; gap: 10px; }
+.dept-item { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.dept-name { color: var(--mut); display: flex; align-items: center; gap: 8px; }
+.dept-dot { width: 6px; height: 6px; border-radius: 50%; }
+.dept-val { display: flex; gap: 12px; align-items: baseline; }
+.dept-pct { font-size: 12px; color: var(--mut); min-width: 35px; text-align: right; }
 
-/* 篩選與表格區 */
-.filter-box { background: var(--sur); padding: 16px; border-radius: 12px; border: 1px solid var(--bdr); margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-.filter-box select, .filter-box input { background: var(--bg); border: 1px solid var(--bdr); color: #fff; padding: 6px 12px; border-radius: 6px; font-family: inherit; }
-.table-container { background: var(--sur); border-radius: 12px; border: 1px solid var(--bdr); overflow: auto; max-height: 600px; }
-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
-th { position: sticky; top: 0; background: var(--sur2); padding: 12px; text-align: left; font-size: 11px; color: var(--mut); }
-td { padding: 12px; border-bottom: 1px solid var(--bdr); }
+/* 區塊標題 */
+h2 { font-size: 14px; color: var(--mut); text-transform: uppercase; letter-spacing: 2px; margin: 40px 0 20px; border-left: 4px solid var(--bdr); padding-left: 10px; }
 
-/* 狀態標籤 */
-.badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-.overdue { background: rgba(248,113,113,0.2); color: var(--red); }
-.pending { background: rgba(74,222,128,0.2); color: var(--grn); }
-
-.btn { cursor: pointer; padding: 8px 16px; border-radius: 8px; border: none; font-weight: 600; font-family: inherit; }
-.btn-primary { background: var(--acc); color: var(--bg); }
+/* 簡易篩選與表格略... */
+input[type="file"] { margin-bottom: 20px; color: var(--mut); }
 </style>
 </head>
 <body>
 
-<header>
-  <h2>📊 應付帳款<span>總表</span></h2>
-  <div>
-    <button class="btn btn-primary" onclick="exportXlsx()">⬇ 匯出 Excel</button>
-  </div>
-</header>
+<h1>應付帳款總表</h1>
+<input type="file" id="upload" multiple onchange="handleFiles(this.files)">
 
-<main>
-  <div class="section-title">資料來源 (請上傳 Excel)</div>
-  <input type="file" id="upload" multiple onchange="handleFiles(this.files)" style="margin-bottom: 20px; color: var(--mut);">
+<h2>應付總額 (各幣別)</h2>
+<div id="summaryCards" class="card-grid"></div>
 
-  <div class="section-title">應付總額摘要</div>
-  <div id="summaryCards" class="cur-grid"></div>
+<h2>逾期帳款</h2>
+<div id="overdueCards" class="card-grid"></div>
 
-  <div class="section-title">逾期帳款</div>
-  <div id="overdueCards" class="cur-grid"></div>
+<h2>當月帳款</h2>
+<div id="monthlyCards" class="card-grid"></div>
 
-  <div class="section-title">當月帳款</div>
-  <div id="monthlyCards" class="cur-grid"></div>
-
-  <div class="section-title">篩選檢視與明細</div>
-  <div class="filter-box">
-    <select id="fDept" onchange="renderAll()"><option value="">所有部門</option></select>
-    <select id="fStat" onchange="renderAll()"><option value="">所有狀態</option></select>
-    <select id="fCur" onchange="renderAll()"><option value="">所有幣別</option></select>
-    <input type="text" id="fSearch" placeholder="搜尋備註..." oninput="renderAll()">
-  </div>
-
-  <div class="table-container">
-    <table>
-      <thead>
-        <tr><th>部門</th><th>狀態</th><th>付款日</th><th>類別</th><th>備註</th><th>金額</th><th>幣別</th></tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-</main>
+<h2>篩選檢視</h2>
+<div id="filterCards" class="card-grid"></div>
 
 <script>
 let rawData = [];
 const CUR_META = {
-  'NTD': { color: '#38bdf8' },
-  'USD': { color: '#4ade80' },
-  'JPY': { color: '#fbbf24' },
-  'EUR': { color: '#c084fc' },
-  'ZAR': { color: '#f87171' }
+  'NTD': { color: 'var(--c-ntd)' },
+  'USD': { color: 'var(--c-usd)' },
+  'JPY': { color: 'var(--c-jpy)' },
+  'EUR': { color: 'var(--c-eur)' },
+  'ZAR': { color: 'var(--c-zar)' }
 };
 
-const DEPT_COLORS = ['#38bdf8', '#4ade80', '#fbbf24', '#c084fc', '#f87171', '#fb923c', '#2dd4bf'];
-
+// 解析邏輯 (延用先前的核心)
 async function handleFiles(files) {
   rawData = [];
   for (let f of files) {
     const data = await f.arrayBuffer();
     const workbook = XLSX.read(data);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const json = XLSX.utils.sheet_to_json(sheet);
-    // 假設格式與你提供的相同，進行處理
-    json.forEach(r => {
-      // 這裡簡單化處理，實際需跑你的 parseRaw
-      if(r['部門']) rawData.push(r);
-    });
+    const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+    json.forEach(r => { if(r['部門']) rawData.push(r); });
   }
-  updateFilters();
   renderAll();
 }
 
-function updateFilters() {
-  const depts = [...new Set(rawData.map(r => r['部門']))];
-  const select = document.getElementById('fDept');
-  select.innerHTML = '<option value="">所有部門</option>' + depts.map(d => `<option>${d}</option>`).join('');
-}
-
 function renderAll() {
-  const filterDept = document.getElementById('fDept').value;
-  const filterStat = document.getElementById('fStat').value;
-  
-  const filtered = rawData.filter(r => 
-    (!filterDept || r['部門'] === filterDept) &&
-    (!filterStat || r['狀態'] === filterStat)
-  );
+  const isM = (d) => {
+    if(!d) return false;
+    const date = new Date(d);
+    return date.getMonth() === new Date().getMonth() && date.getFullYear() === new Date().getFullYear();
+  };
 
-  // 1. 渲染大字卡
-  renderCards('summaryCards', filtered);
-  renderCards('overdueCards', filtered.filter(r => r['狀態'] === '逾期'), true);
-  renderCards('monthlyCards', filtered.filter(r => isCurrentMonth(r['付款日'])), true);
-
-  // 2. 渲染表格
-  const tbody = document.getElementById('tbody');
-  tbody.innerHTML = filtered.map(r => `
-    <tr>
-      <td>${r['部門']}</td>
-      <td><span class="badge ${r['狀態'] === '逾期' ? 'overdue' : 'pending'}">${r['狀態']}</span></td>
-      <td>${r['付款日'] || '-'}</td>
-      <td>${r['類別'] || '-'}</td>
-      <td>${r['備註'] || '-'}</td>
-      <td style="font-family: 'JetBrains Mono'">${(r['NTD'] || r['USD'] || 0).toLocaleString()}</td>
-      <td style="color:var(--mut)">${r['USD'] ? 'USD' : 'NTD'}</td>
-    </tr>
-  `).join('');
+  renderCards('summaryCards', rawData);
+  renderCards('overdueCards', rawData.filter(r => r['狀態'] === '逾期'));
+  renderCards('monthlyCards', rawData.filter(r => isM(r['付款日'])));
+  renderCards('filterCards', rawData); // 此處可根據篩選器邏輯連動
 }
 
-function renderCards(containerId, data, showCount = false) {
+function renderCards(containerId, data) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
   
@@ -168,54 +100,38 @@ function renderCards(containerId, data, showCount = false) {
   currencies.forEach(cur => {
     const items = data.filter(r => r[cur] && r[cur] > 0);
     const total = items.reduce((sum, r) => sum + r[cur], 0);
-    
     if (total === 0) return;
 
     const depts = [...new Set(items.map(r => r['部門']))];
-    const deptSummary = depts.map((d, i) => {
+    const deptSummary = depts.map(d => {
       const amt = items.filter(r => r['部門'] === d).reduce((sum, r) => sum + r[cur], 0);
-      return { 
-        name: d, 
-        amt, 
-        pct: ((amt / total) * 100).toFixed(0),
-        color: DEPT_COLORS[i % DEPT_COLORS.length]
-      };
+      return { name: d, amt, pct: Math.round((amt / total) * 100) };
     }).sort((a, b) => b.amt - a.amt);
 
     const card = document.createElement('div');
-    card.className = 'cur-card';
+    card.className = 'big-card';
+    card.style.borderTop = `4px solid ${CUR_META[cur].color}`;
+    
     card.innerHTML = `
-      <div class="cur-top-bar" style="background: ${CUR_META[cur].color}"></div>
-      <div class="cur-body">
-        <div class="cur-header">
-          <div class="cur-label">${cur} 合計 ${showCount ? `(${items.length} 筆)` : ''}</div>
-          <div class="cur-total">${total.toLocaleString()}</div>
-        </div>
-        <div class="cur-dept-list">
-          ${deptSummary.map(ds => `
-            <div class="dept-item">
-              <div class="dept-info">
-                <div class="dept-dot" style="background: ${ds.color}"></div>
-                <span>${ds.name}</span>
-              </div>
-              <div style="display:flex; gap:10px; align-items:center">
-                <span class="dept-amt">${ds.amt.toLocaleString()}</span>
-                <span class="dept-pct">${ds.pct}%</span>
-              </div>
+      <div class="card-cur" style="color: ${CUR_META[cur].color}">${cur}</div>
+      <div class="card-amt">${total.toLocaleString()}</div>
+      <div class="dept-list">
+        ${deptSummary.map(ds => `
+          <div class="dept-item">
+            <div class="dept-name">
+              <span class="dept-dot" style="background: ${CUR_META[cur].color}"></span>
+              ${ds.name}
             </div>
-          `).join('')}
-        </div>
+            <div class="dept-val">
+              <span>${ds.amt.toLocaleString()}</span>
+              <span class="dept-pct">${ds.pct}%</span>
+            </div>
+          </div>
+        `).join('')}
       </div>
     `;
     container.appendChild(card);
   });
-}
-
-function isCurrentMonth(dateStr) {
-  if(!dateStr) return false;
-  const d = new Date(dateStr);
-  const now = new Date();
-  return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
 }
 </script>
 </body>
