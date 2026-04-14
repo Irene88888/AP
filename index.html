@@ -1,68 +1,475 @@
-// 設定基準匯率 (若 Excel 內沒抓到則以此為準)
-const DEFAULT_RATE_USD = 31.8;
-
-function handleFileUpload(input, type) {
-  const file = input.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, {type: 'array'});
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-
-    // 針對「船務」或「貿易」進行特定的加總邏輯
-    processAccountingData(type, jsonData, file.name);
-  };
-  reader.readAsArrayBuffer(file);
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>付款統計表</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #f0f2f5;
+  color: #1a2035;
+  font-family: 'Noto Sans TC', sans-serif;
+  min-height: 100vh;
+  padding: 28px 28px 56px;
 }
 
-function processAccountingData(type, data, fileName) {
-  let totalNTD = 0;
-  let totalUSD = 0;
-  let totalJPY = 0;
+/* ── HEADER ── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; flex-wrap: wrap; gap: 10px;
+}
+.header-left h1 { font-size: 21px; font-weight: 900; color: #1a2035; letter-spacing: -0.3px; }
+.header-left p  { font-size: 12px; color: #9aa4b8; margin-top: 3px; }
+.date-chip {
+  font-family: 'Space Mono', monospace; font-size: 11px; color: #fff;
+  background: #3d5af1; padding: 6px 16px; border-radius: 99px;
+}
 
-  data.forEach(row => {
-    // 依據您的欄位名稱抓取資料
-    // 使用 Number() 確保字串轉為數字，並處理可能的空值
-    const usd = Number(row["美金金額"] || 0);
-    const ntd = Number(row["台幣金額"] || 0);
-    const jpy = Number(row["日幣金額"] || 0); // 若未來有日幣欄位
+/* ── CAT TABS ── */
+.cat-tabs {
+  display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.cat-tab {
+  font-size: 13px; font-weight: 700; padding: 9px 22px;
+  border-radius: 10px; border: none; cursor: pointer;
+  transition: all 0.18s; background: #fff; color: #9aa4b8;
+  font-family: 'Noto Sans TC', sans-serif;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.cat-tab:hover { color: #1a2035; box-shadow: 0 3px 10px rgba(0,0,0,0.1); }
+.cat-tab.active { color: #fff; }
+.cat-tab[data-cat="total"].active   { background: #3d5af1; }
+.cat-tab[data-cat="overdue"].active { background: #ef4444; }
+.cat-tab[data-cat="week"].active    { background: #f59e0b; }
+.cat-tab[data-cat="month"].active   { background: #10b981; }
 
-    totalUSD += usd;
-    totalNTD += ntd;
-    totalJPY += jpy;
+/* ── SINGLE CARD DISPLAY ── */
+.cards-grid {
+  display: block;
+  margin-bottom: 28px;
+  max-width: 360px;
+}
+
+.summary-card {
+  background: #fff; border-radius: 14px;
+  border-top: 4px solid var(--ac); padding: 22px 22px 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 2px 12px rgba(0,0,0,0.04);
+  display: none; /* hidden by default */
+}
+.summary-card.active {
+  display: block; /* only active card shown */
+}
+
+.summary-card[data-type="total"]   { --ac: #3d5af1; }
+.summary-card[data-type="overdue"] { --ac: #ef4444; }
+.summary-card[data-type="week"]    { --ac: #f59e0b; }
+.summary-card[data-type="month"]   { --ac: #10b981; }
+
+.card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.card-name { font-size: 13px; font-weight: 700; color: #1a2035; }
+.card-count {
+  font-family: 'Space Mono', monospace; font-size: 10px;
+  color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 10%, #fff);
+  border: 1px solid color-mix(in srgb, var(--ac) 22%, transparent);
+  padding: 2px 9px; border-radius: 99px;
+}
+
+/* currency rows inside card */
+.curr-list { display: flex; flex-direction: column; gap: 8px; }
+.curr-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 9px; background: #f8f9fc;
+  cursor: pointer; transition: background 0.12s;
+}
+.curr-item:hover { background: #eef1f9; }
+.curr-item.active-curr {
+  background: color-mix(in srgb, var(--ac) 9%, #fff);
+  outline: 1.5px solid color-mix(in srgb, var(--ac) 35%, transparent);
+}
+.curr-badge {
+  font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700;
+  color: var(--ac);
+  background: color-mix(in srgb, var(--ac) 12%, #fff);
+  border: 1px solid color-mix(in srgb, var(--ac) 28%, transparent);
+  padding: 2px 7px; border-radius: 4px; min-width: 36px; text-align: center; flex-shrink: 0;
+}
+.curr-amount {
+  font-family: 'Space Mono', monospace; font-size: 15px; font-weight: 700;
+  color: #1a2035; flex: 1; text-align: right; letter-spacing: -0.5px;
+}
+.curr-amount.zero { color: #c5ccd9; font-size: 12px; font-weight: 400; }
+.curr-sub {
+  font-size: 10px; color: #b0bacc; text-align: right; white-space: nowrap;
+}
+
+/* ── DETAIL TABLE ── */
+.detail-section {
+  background: #fff; border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 2px 12px rgba(0,0,0,0.04);
+  overflow: hidden;
+}
+.detail-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 22px; border-bottom: 1px solid #eef1f7; flex-wrap: wrap;
+}
+.detail-title { font-size: 14px; font-weight: 700; color: #1a2035; }
+.detail-count {
+  font-family: 'Space Mono', monospace; font-size: 11px;
+  color: #9aa4b8; background: #f0f2f5; padding: 3px 10px; border-radius: 99px;
+}
+.filter-bar {
+  display: flex; gap: 6px; padding: 12px 22px;
+  border-bottom: 1px solid #eef1f7; flex-wrap: wrap; align-items: center;
+}
+.filter-label { font-size: 11px; color: #b0bacc; font-weight: 600; letter-spacing: 0.5px; margin-right: 4px; }
+.filter-btn {
+  font-size: 11px; font-weight: 600; padding: 5px 14px;
+  border-radius: 6px; border: 1.5px solid #eef1f7;
+  background: #fff; color: #9aa4b8; cursor: pointer;
+  transition: all 0.13s; font-family: 'Noto Sans TC', sans-serif;
+}
+.filter-btn:hover { border-color: #c5ccd9; color: #1a2035; }
+.filter-btn.active { background: #1a2035; border-color: #1a2035; color: #fff; }
+
+.table-wrapper { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead th {
+  background: #f8f9fc; color: #b0bacc; font-size: 10px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase;
+  padding: 11px 18px; text-align: left;
+  border-bottom: 1px solid #eef1f7; white-space: nowrap;
+}
+tbody tr { border-bottom: 1px solid #f4f6fb; transition: background 0.1s; }
+tbody tr:hover { background: #f8f9fc; }
+tbody tr:last-child { border-bottom: none; }
+td { padding: 12px 18px; vertical-align: middle; color: #4a5568; }
+td.dept { color: #1a2035; font-weight: 600; }
+td.status .badge {
+  font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 5px; white-space: nowrap;
+}
+.badge-overdue { background:#fef2f2; color:#ef4444; border:1px solid #fecaca; }
+.badge-payable { background:#f0fdf4; color:#10b981; border:1px solid #bbf7d0; }
+.badge-notice  { background:#fffbeb; color:#f59e0b; border:1px solid #fde68a; }
+td.amount {
+  font-family:'Space Mono',monospace; font-size:13px; font-weight:700;
+  text-align:right; color:#1a2035; white-space:nowrap;
+}
+td.date { font-family:'Space Mono',monospace; font-size:11px; white-space:nowrap; color:#9aa4b8; }
+td.date.past { color:#ef4444; font-weight:700; }
+td.remark {
+  max-width:240px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; color:#9aa4b8; font-size:12px;
+}
+.empty-state { text-align:center; padding:56px; color:#c5ccd9; font-size:13px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>付款統計表</h1>
+    <p id="date-sub"></p>
+  </div>
+  <span class="date-chip" id="date-chip"></span>
+</header>
+
+<!-- CAT TABS -->
+<div class="cat-tabs">
+  <button class="cat-tab active" data-cat="total"   onclick="selectCat('total')">📊 全部總額</button>
+  <button class="cat-tab"        data-cat="overdue" onclick="selectCat('overdue')">⚠️ 逾期</button>
+  <button class="cat-tab"        data-cat="week"    onclick="selectCat('week')">📅 當周</button>
+  <button class="cat-tab"        data-cat="month"   onclick="selectCat('month')">🗓 當月</button>
+</div>
+
+<!-- SINGLE CARD (switches based on tab) -->
+<div class="cards-grid">
+  <div class="summary-card active" data-type="total">
+    <div class="card-head"><span class="card-name">📊 全部總額</span><span class="card-count" id="cnt-total">0 筆</span></div>
+    <div class="curr-list" id="cl-total"></div>
+  </div>
+  <div class="summary-card" data-type="overdue">
+    <div class="card-head"><span class="card-name">⚠️ 逾期</span><span class="card-count" id="cnt-overdue">0 筆</span></div>
+    <div class="curr-list" id="cl-overdue"></div>
+  </div>
+  <div class="summary-card" data-type="week">
+    <div class="card-head"><span class="card-name">📅 當周</span><span class="card-count" id="cnt-week">0 筆</span></div>
+    <div class="curr-list" id="cl-week"></div>
+  </div>
+  <div class="summary-card" data-type="month">
+    <div class="card-head"><span class="card-name">🗓 當月</span><span class="card-count" id="cnt-month">0 筆</span></div>
+    <div class="curr-list" id="cl-month"></div>
+  </div>
+</div>
+
+<!-- DETAIL -->
+<div class="detail-section">
+  <div class="detail-header">
+    <span class="detail-title" id="detail-title">全部總額　全幣別　明細</span>
+    <span class="detail-count" id="detail-count">0 筆</span>
+  </div>
+  <div class="filter-bar">
+    <span class="filter-label">部門</span>
+    <button class="filter-btn active" data-dept="all"  onclick="filterDept('all')">全部</button>
+    <button class="filter-btn"        data-dept="貿易" onclick="filterDept('貿易')">貿易</button>
+    <button class="filter-btn"        data-dept="船務" onclick="filterDept('船務')">船務</button>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead><tr>
+        <th>部門</th><th>狀態</th><th>付款日</th><th>類別</th><th>備註</th>
+        <th style="text-align:right">金額</th>
+      </tr></thead>
+      <tbody id="detail-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const RAW = [
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'飯田(25-0563)',curr:'JPY',amt:6443500},
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'飯田(25-0562)',curr:'JPY',amt:21253620},
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'飯田(26-0085)',curr:'JPY',amt:7055800},
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'飯田',curr:'JPY',amt:4483500},
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'友和(運費差額待補上+缺批號)',curr:'JPY',amt:2050000},
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'昇鮮',curr:'NTD',amt:74400},
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'友和(26-0143)',curr:'JPY',amt:22272000},
+  {dept:'貿易',status:'應付',date:'2026/04/15',cat:'貨款',remark:'上雋',curr:'NTD',amt:1257408},
+  {dept:'貿易',status:'應付',date:'2026/04/16',cat:'貨款',remark:'上雋',curr:'NTD',amt:1345967},
+  {dept:'貿易',status:'應付',date:'2026/04/17',cat:'貨款',remark:'廈門同中和',curr:'USD',amt:130608.48},
+  {dept:'貿易',status:'應付',date:'2026/04/20',cat:'費用',remark:'全球',curr:'NTD',amt:158302},
+  {dept:'貿易',status:'應付',date:'2026/04/22',cat:'貨款',remark:'益泰',curr:'NTD',amt:5975},
+  {dept:'貿易',status:'應付',date:'2026/04/25',cat:'費用',remark:'立揚通運',curr:'NTD',amt:5760},
+  {dept:'貿易',status:'應付',date:'2026/04/25',cat:'費用',remark:'鋐暢運輸事業股份有限公司',curr:'NTD',amt:3200},
+  {dept:'貿易',status:'應付',date:'2026/04/25',cat:'費用',remark:'昱臺國際股份有限公司',curr:'NTD',amt:10848},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'一洋',curr:'NTD',amt:23700},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'元家',curr:'NTD',amt:20640},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'天海',curr:'NTD',amt:57000},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'名昇',curr:'NTD',amt:135213},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'洋希國際',curr:'NTD',amt:204700},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'鈺贊',curr:'NTD',amt:13000},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'綜信',curr:'NTD',amt:2763},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'費用',remark:'興德3月倉租',curr:'NTD',amt:43898},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'費用',remark:'大順冷凍',curr:'NTD',amt:52500},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'口湖魚類生產合作社',curr:'NTD',amt:3000},
+  {dept:'貿易',status:'應付',date:'2026/04/30',cat:'貨款',remark:'豐華食品機械(尾款)',curr:'NTD',amt:1249500},
+  {dept:'貿易',status:'應付',date:'2026/05/01',cat:'費用',remark:'全球',curr:'NTD',amt:194368},
+  {dept:'貿易',status:'應付',date:'2026/05/01',cat:'費用',remark:'沛榮',curr:'NTD',amt:37517},
+  {dept:'貿易',status:'應付',date:'2026/05/04',cat:'貨款',remark:'沃程',curr:'USD',amt:54218.16},
+  {dept:'貿易',status:'應付',date:'2026/07/10',cat:'費用',remark:'鄭寶金',curr:'NTD',amt:40425},
+  {dept:'貿易',status:'應付',date:'2026/08/10',cat:'費用',remark:'志明冷凍行',curr:'NTD',amt:181441},
+  {dept:'船務',status:'應付',date:'2026/04/20',cat:'薪資/獎金',remark:'威海-2026/1-2月薪資',curr:'USD',amt:35400},
+  {dept:'船務',status:'應付',date:'2026/04/15',cat:'薪資/獎金',remark:'星海-2026/1-2月薪資',curr:'USD',amt:87494.51},
+  {dept:'船務',status:'應付',date:'2026/04/20',cat:'薪資/獎金',remark:'新天通-2026/1-2月薪資',curr:'USD',amt:7560},
+  {dept:'船務',status:'應付',date:'2026/05/26',cat:'補給',remark:'Abao-2026/2-3月開普敦補給',curr:'ZAR',amt:156566},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'中信資融-豐盛/順利租車費第十五期',curr:'NTD',amt:441300},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'中信資融-豐盛/順利租車費第十四期',curr:'NTD',amt:441300},
+  {dept:'船務',status:'應付',date:'2026/04/25',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:1170917},
+  {dept:'船務',status:'應付',date:'2026/05/10',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:274531},
+  {dept:'船務',status:'應付',date:'2026/06/10',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:191899},
+  {dept:'船務',status:'應付',date:'2026/06/25',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:54347},
+  {dept:'船務',status:'應付',date:'2026/07/01',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:120000},
+  {dept:'船務',status:'應付',date:'2026/07/10',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:4198591},
+  {dept:'船務',status:'應付',date:'2026/07/25',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:753789},
+  {dept:'船務',status:'應付',date:'2026/10/01',cat:'支票兌現',remark:'支票兌現',curr:'NTD',amt:120000},
+  {dept:'船務',status:'應付',date:'2026/04/15',cat:'費用',remark:'吳俐蘋-代墊順豐會計寄至香港運費',curr:'NTD',amt:134},
+  {dept:'船務',status:'應付',date:'2026/04/20',cat:'薪資/獎金',remark:'明台-2026年度P&I保費',curr:'USD',amt:103139.29},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'薪資/獎金',remark:'林億泰-2026/4/13-5/12滿福668安平港顧船費',curr:'NTD',amt:16666},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'薪資/獎金',remark:'林億泰-2026/5/13-6/12滿福668安平港顧船費',curr:'NTD',amt:16666},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'薪資/獎金',remark:'翁志豪-2026/4月薪資',curr:'NTD',amt:55397},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'薪資/獎金',remark:'翁志豪-2026/5月薪資',curr:'NTD',amt:55397},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'健保局-2026/3月健保',curr:'NTD',amt:5852},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'健保局-2026/4月健保',curr:'NTD',amt:5852},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'薪資/獎金',remark:'郭文進-2026/4月薪資',curr:'NTD',amt:60000},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'薪資/獎金',remark:'郭文進-2026/5月薪資',curr:'NTD',amt:60000},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'薪資/獎金',remark:'陳宏利-2026/4月薪資',curr:'NTD',amt:60000},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'薪資/獎金',remark:'陳宏利-2026/5月薪資',curr:'NTD',amt:60000},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'勞保局-2026/3月勞保',curr:'NTD',amt:10864},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'勞保局-2026/4月勞保',curr:'NTD',amt:10864},
+  {dept:'船務',status:'應付',date:'2026/04/25',cat:'費用',remark:'華郁-2025/10月機票',curr:'NTD',amt:860700},
+  {dept:'船務',status:'應付',date:'2026/06/25',cat:'費用',remark:'華郁-2025/12機票款',curr:'NTD',amt:27500},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'薪資/獎金',remark:'楊金順-2026/4月薪資',curr:'NTD',amt:56542},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'薪資/獎金',remark:'楊金順-2026/5月薪資',curr:'NTD',amt:56542},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'漁業署-呂友助罰鍰NT600萬第二十二期',curr:'NTD',amt:100000},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'漁業署-呂友助罰鍰NT600萬第二十三期',curr:'NTD',amt:100000},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'漁業署-滿福188船長張繼陽罰款第十一期',curr:'NTD',amt:25000},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'漁業署-滿福188船長張繼陽罰款第十一期(2)',curr:'NTD',amt:5000},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'漁業署-滿福188船長張繼陽罰款第十二期',curr:'NTD',amt:25000},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'漁業署-滿福188船長張繼陽罰款第十二期(2)',curr:'NTD',amt:5000},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'漁業署-滿福666大車朱光安罰金第七期',curr:'NTD',amt:25000},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'漁業署-滿福666大車朱光安罰金第八期',curr:'NTD',amt:25000},
+  {dept:'船務',status:'應付',date:'2026/05/05',cat:'費用',remark:'漁業署-滿福666船長吳剛林罰金第七期',curr:'NTD',amt:5000},
+  {dept:'船務',status:'應付',date:'2026/06/05',cat:'費用',remark:'漁業署-滿福666船長吳剛林罰金第八期',curr:'NTD',amt:5000},
+  {dept:'貿易',status:'案件通知',date:'2026/05/15',cat:'貨款',remark:'海冠',curr:'NTD',amt:510000},
+  {dept:'貿易',status:'案件通知',date:'2026/04/20',cat:'貨款',remark:'天海',curr:'NTD',amt:221436},
+  {dept:'貿易',status:'案件通知',date:'2026/05/15',cat:'貨款',remark:'天海',curr:'NTD',amt:516684},
+  {dept:'貿易',status:'案件通知',date:'2026/04/30',cat:'貨款',remark:'創想知識股份有限公司',curr:'NTD',amt:195000},
+  {dept:'貿易',status:'案件通知',date:'2026/06/15',cat:'貨款',remark:'創想知識股份有限公司',curr:'NTD',amt:195000},
+  {dept:'貿易',status:'案件通知',date:'2026/04/30',cat:'貨款',remark:'鄭豐儀（40噸）',curr:'NTD',amt:1000000},
+  {dept:'貿易',status:'案件通知',date:'2026/05/31',cat:'貨款',remark:'鄭豐儀',curr:'NTD',amt:1700000},
+  {dept:'貿易',status:'案件通知',date:'2026/04/28',cat:'貨款',remark:'孫宗敬',curr:'NTD',amt:242485},
+];
+
+/* ── DATE ── */
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+function parseDate(s) {
+  const [y,m,d]=s.split('/').map(Number);
+  const dt=new Date(y,m-1,d); dt.setHours(0,0,0,0); return dt;
+}
+const dow=TODAY.getDay();
+const WS=new Date(TODAY); WS.setDate(TODAY.getDate()+(dow===0?-6:1-dow));
+const WE=new Date(WS); WE.setDate(WS.getDate()+6);
+const MS=new Date(TODAY.getFullYear(),TODAY.getMonth(),1);
+const ME=new Date(TODAY.getFullYear(),TODAY.getMonth()+1,0);
+
+const isOverdue  = r => parseDate(r.date)<TODAY;
+const isThisWeek = r => { const d=parseDate(r.date); return d>=TODAY&&d>=WS&&d<=WE; };
+const isThisMonth= r => { const d=parseDate(r.date); return d>=TODAY&&d>=MS&&d<=ME; };
+
+const CATS = {
+  total:   { label:'全部總額', fn:()=>true },
+  overdue: { label:'逾期',     fn:isOverdue },
+  week:    { label:'當周',     fn:isThisWeek },
+  month:   { label:'當月',     fn:isThisMonth },
+};
+const CURRENCIES = ['NTD','USD','JPY','EUR','ZAR'];
+
+/* ── FORMAT ── */
+function fmtShort(curr, amt) {
+  if(amt===0) return '—';
+  if(curr==='NTD'||curr==='JPY'||curr==='ZAR') return Math.round(amt).toLocaleString();
+  return amt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+}
+function fmtFull(curr, amt) {
+  if(amt===0)return'—';
+  if(curr==='JPY') return 'JPY '+Math.round(amt).toLocaleString();
+  if(curr==='NTD') return 'NT$'+Math.round(amt).toLocaleString();
+  if(curr==='USD') return 'US$'+amt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  if(curr==='EUR') return '€'+amt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  if(curr==='ZAR') return 'ZAR '+Math.round(amt).toLocaleString();
+  return amt.toLocaleString();
+}
+
+/* ── STATE ── */
+let activeCat  = 'total';
+let activeCurr = 'ALL';
+let activeDept = 'all';
+
+/* ── RENDER CARD LISTS ── */
+function buildCurrList(catKey) {
+  const rows = RAW.filter(CATS[catKey].fn);
+  const isActiveCat = catKey === activeCat;
+  let html = '';
+
+  CURRENCIES.forEach(c => {
+    const sum = rows.filter(r=>r.curr===c).reduce((s,r)=>s+r.amt,0);
+    const cnt = rows.filter(r=>r.curr===c).length;
+    if(sum===0) return;
+    const rowActive = isActiveCat && activeCurr===c;
+    html += `<div class="curr-item${rowActive?' active-curr':''}"
+      onclick="pickCurr(event,'${catKey}','${c}')">
+      <span class="curr-badge">${c}</span>
+      <span class="curr-amount">${fmtShort(c,sum)}</span>
+    </div>`;
   });
 
-  // 更新介面
-  const typeKey = type === '貿易' ? 'trade' : (type === '船務' ? 'ship' : 'fish');
-  
-  document.getElementById(`val-${typeKey}-ntd`).innerText = Math.round(totalNTD).toLocaleString();
-  document.getElementById(`val-${typeKey}-usd`).innerText = totalUSD.toLocaleString(undefined, {minimumFractionDigits: 2});
-  document.getElementById(`val-${typeKey}-jpy`).innerText = Math.round(totalJPY).toLocaleString();
-  document.getElementById(`log-${typeKey}`).innerText = `已解析: ${fileName} (${data.length} 筆)`;
+  if(!html) html = `<div style="color:#c5ccd9;font-size:12px;padding:8px 4px">無資料</div>`;
 
-  // 重新計算總表
-  calculateGrandTotal();
+  document.getElementById('cl-'+catKey).innerHTML = html;
+  document.getElementById('cnt-'+catKey).textContent = rows.length+' 筆';
 }
 
-function calculateGrandTotal() {
-  const allNtd = parseFormattedNumber('val-trade-ntd') + parseFormattedNumber('val-ship-ntd') + parseFormattedNumber('val-fish-ntd');
-  const allUsd = parseFormattedNumber('val-trade-usd') + parseFormattedNumber('val-ship-usd') + parseFormattedNumber('val-fish-usd');
-  const allJpy = parseFormattedNumber('val-trade-jpy') + parseFormattedNumber('val-ship-jpy') + parseFormattedNumber('val-fish-jpy');
-
-  // 將所有幣別折算回台幣 (假設匯率抓取自頂部)
-  const grandTotal = allNtd + (allUsd * DEFAULT_RATE_USD) + (allJpy * 0.199);
-  
-  document.getElementById('grand-total').innerText = `NT$ ${Math.round(grandTotal).toLocaleString()}`;
-  
-  // 更新狀態標籤
-  const status = document.getElementById('status-tag');
-  status.innerText = "已整併完成";
-  status.className = "bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold";
+function renderAllCards() {
+  Object.keys(CATS).forEach(k => buildCurrList(k));
 }
 
-function parseFormattedNumber(id) {
-  return parseFloat(document.getElementById(id).innerText.replace(/,/g, '')) || 0;
+/* ── CAT TAB ── */
+function selectCat(cat) {
+  activeCat  = cat;
+  activeCurr = 'ALL';
+  document.querySelectorAll('.cat-tab').forEach(t=>t.classList.remove('active'));
+  document.querySelector(`.cat-tab[data-cat="${cat}"]`).classList.add('active');
+  // show only the matching card
+  document.querySelectorAll('.summary-card').forEach(c=>c.classList.remove('active'));
+  document.querySelector(`.summary-card[data-type="${cat}"]`).classList.add('active');
+  renderAllCards();
+  renderTable();
 }
+
+/* ── CLICK CURRENCY ROW ── */
+function pickCurr(e, catKey, curr) {
+  e.stopPropagation();
+  activeCurr = curr;
+  renderAllCards();
+  renderTable();
+}
+
+/* ── DEPT FILTER ── */
+function filterDept(dept) {
+  activeDept = dept;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`.filter-btn[data-dept="${dept}"]`).classList.add('active');
+  renderTable();
+}
+
+/* ── BADGE ── */
+function badgeClass(r){
+  if(isOverdue(r)) return 'badge-overdue';
+  if(r.status==='案件通知') return 'badge-notice';
+  return 'badge-payable';
+}
+function badgeLabel(r){
+  if(isOverdue(r)) return '逾期';
+  if(r.status==='案件通知') return '案件通知';
+  return '應付';
+}
+
+/* ── TABLE ── */
+function renderTable() {
+  let rows = RAW.filter(CATS[activeCat].fn);
+  if(activeCurr!=='ALL') rows=rows.filter(r=>r.curr===activeCurr);
+  if(activeDept!=='all') rows=rows.filter(r=>r.dept===activeDept);
+
+  const currLabel = activeCurr==='ALL'?'全幣別':activeCurr;
+  document.getElementById('detail-title').textContent =
+    CATS[activeCat].label+'　'+currLabel+'　明細';
+  document.getElementById('detail-count').textContent = rows.length+' 筆';
+
+  const tbody=document.getElementById('detail-body');
+  if(!rows.length){
+    tbody.innerHTML=`<tr><td colspan="6" class="empty-state">無符合資料</td></tr>`;
+    return;
+  }
+  tbody.innerHTML=rows.map(r=>{
+    const past=parseDate(r.date)<TODAY;
+    return `<tr>
+      <td class="dept">${r.dept}</td>
+      <td class="status"><span class="badge ${badgeClass(r)}">${badgeLabel(r)}</span></td>
+      <td class="date ${past?'past':''}">${r.date}</td>
+      <td>${r.cat}</td>
+      <td class="remark" title="${r.remark}">${r.remark}</td>
+      <td class="amount">${fmtFull(r.curr,r.amt)}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── INIT ── */
+function init(){
+  const p2=n=>n.toString().padStart(2,'0');
+  const fd=d=>d.getFullYear()+'/'+p2(d.getMonth()+1)+'/'+p2(d.getDate());
+  const fm=d=>p2(d.getMonth()+1)+'/'+p2(d.getDate());
+  document.getElementById('date-chip').textContent='今日 '+fd(TODAY);
+  document.getElementById('date-sub').textContent=
+    '當周：'+fm(WS)+'–'+fm(WE)+'　當月：'+TODAY.getFullYear()+'/'+p2(TODAY.getMonth()+1);
+  renderAllCards();
+  renderTable();
+}
+init();
+</script>
+</body>
+</html>
